@@ -18,10 +18,11 @@ interface ViewMatterDashboardProps {
   plan: PlanTier;
   userName: string;
   userId: string;
+  is3DMode?: boolean;
   onBack: () => void;
 }
 
-export default function ViewMatterDashboard({ matter, plan, userName, userId, onBack }: ViewMatterDashboardProps) {
+export default function ViewMatterDashboard({ matter, plan, userName, userId, is3DMode = false, onBack }: ViewMatterDashboardProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'drafting' | 'documents' | 'chronology' | 'hearings' | 'notes'>('overview');
   
   // Real-time states
@@ -367,28 +368,28 @@ export default function ViewMatterDashboard({ matter, plan, userName, userId, on
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50 font-sans" id="view-matter-dashboard">
+    <div className={`flex flex-col min-h-screen transition-all duration-300 ${is3DMode ? 'bg-transparent' : 'bg-slate-50'}`} id="view-matter-dashboard">
       {/* Header Panel */}
-      <header className="bg-[#12161f] text-white py-4 px-6 border-b border-slate-800">
+      <header className={`py-4 px-6 border-b transition-colors duration-300 ${is3DMode ? 'bg-[#151722]/90 border-[#12141c] text-white shadow-md rounded-2xl mb-4' : 'bg-[#12161f] border-slate-800 text-white'}`}>
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <button
               onClick={onBack}
-              className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition-colors"
+              className={`p-1.5 rounded-xl cursor-pointer transition-colors ${is3DMode ? 'bg-[#2b2f3d] hover:bg-[#343a4b] text-amber-250' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'}`}
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{matter.matterIdText || 'Docket'}</span>
-                <span className="px-1.5 py-0.5 text-[9px] bg-slate-800 border border-slate-700 font-semibold tracking-wider uppercase text-emerald-400 rounded">
+                <span className={`text-[10px] font-bold uppercase tracking-widest ${is3DMode ? 'text-amber-400/80' : 'text-slate-400'}`}>{matter.matterIdText || 'Docket'}</span>
+                <span className={`px-1.5 py-0.5 text-[9px] border font-semibold tracking-wider uppercase rounded ${is3DMode ? 'bg-amber-950/40 border-amber-900/40 text-amber-300' : 'bg-slate-800 border-slate-700 text-emerald-400'}`}>
                   {matter.status}
                 </span>
               </div>
-              <h2 className="text-xl font-display font-semibold tracking-tight uppercase">{matter.title}</h2>
+              <h2 className={`text-xl font-display font-semibold tracking-tight uppercase ${is3DMode ? 'text-amber-200' : 'text-white'}`}>{matter.title}</h2>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs font-mono text-slate-400 bg-slate-900 border border-slate-800 py-1.5 px-3 rounded-xl">
+          <div className={`flex items-center gap-2 text-xs font-mono py-1.5 px-3 rounded-xl ${is3DMode ? 'text-amber-300 bg-amber-950/20 border-amber-900/40' : 'text-slate-400 bg-slate-900 border border-slate-800'}`}>
             <Scale className="h-4 w-4 text-blue-400" />
             <span>Forum: {matter.courtName}</span>
           </div>
@@ -396,13 +397,13 @@ export default function ViewMatterDashboard({ matter, plan, userName, userId, on
       </header>
 
       {/* Tabs Controller */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-6 overflow-x-auto flex gap-6">
+      <div className={`transition-all duration-300 ${is3DMode ? 'bg-[#14151e] border border-black/80 rounded-2xl p-1.5 shadow-lg max-w-7xl w-full mx-auto mb-4' : 'bg-white border-b border-slate-200'}`}>
+        <div className={`max-w-7xl mx-auto px-4 overflow-x-auto flex ${is3DMode ? 'gap-2 justify-between' : 'gap-6'}`}>
           {[
             { id: 'overview', name: 'Docket Files', icon: LayoutDashboard },
-            { id: 'drafting', name: 'AI Pleadings Drafting', icon: Scale },
-            { id: 'documents', name: 'Document Summarizer', icon: FileText },
-            { id: 'chronology', name: 'Case Chronology', icon: Clock },
+            { id: 'drafting', name: 'AI Pleadings', icon: Scale },
+            { id: 'documents', name: 'Summarizer', icon: FileText },
+            { id: 'chronology', name: 'Case Timeline', icon: Clock },
             { id: 'hearings', name: 'Hearings Ledger', icon: Calendar },
             { id: 'notes', name: 'Team Memos', icon: MessageSquare }
           ].map(t => {
@@ -411,10 +412,10 @@ export default function ViewMatterDashboard({ matter, plan, userName, userId, on
               <button
                 key={t.id}
                 onClick={() => setActiveTab(t.id as any)}
-                className={`py-3.5 px-1 border-b-2 text-sm font-semibold flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
-                  IsActive
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                className={`flex items-center gap-2 cursor-pointer transition-all duration-200 whitespace-nowrap ${
+                  is3DMode 
+                    ? `py-2 px-3.5 text-xs font-bold rounded-xl ${IsActive ? 'bg-[#ebd6a5] text-amber-950 shadow-inner border border-amber-600/30' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1f212a]'}`
+                    : `py-3.5 px-1 border-b-2 text-sm font-semibold ${IsActive ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-900'}`
                 }`}
               >
                 <t.icon className="h-4.5 w-4.5" />
@@ -426,12 +427,16 @@ export default function ViewMatterDashboard({ matter, plan, userName, userId, on
       </div>
 
       {/* Primary Workstation */}
-      <main className="flex-grow max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+      <main className={`flex-grow w-full mx-auto p-4 sm:p-6 lg:p-8 transition-all duration-300 relative ${is3DMode ? 'bg-leather-pad rounded-[2.5rem] border border-black max-w-7xl' : 'max-w-7xl'}`}>
+        {is3DMode && (
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1 w-44 h-3.5 gold-edge rounded-b-md z-10 border-b border-yellow-700/50"></div>
+        )}
+        
         {feedbackMsg && (
           <div className={`mb-6 p-3.5 rounded-2xl border text-sm font-medium ${
             feedbackMsg.type === 'success' 
-              ? 'bg-emerald-50 border-emerald-100 text-emerald-700' 
-              : 'bg-red-50 border-red-100 text-red-700'
+              ? (is3DMode ? 'bg-emerald-950/20 border-emerald-900/30 text-emerald-400' : 'bg-emerald-50 border-emerald-100 text-emerald-700')
+              : (is3DMode ? 'bg-red-955/20 border-red-900/30 text-red-400' : 'bg-red-50 border-red-100 text-red-700')
           }`}>
             {feedbackMsg.text}
           </div>
