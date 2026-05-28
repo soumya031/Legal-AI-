@@ -1,0 +1,6 @@
+{
+  "name": "Legal AI Workspace",
+  "description": "Enterprise SaaS Platform for legal professionals. Streamline matters, draft cases with AI, generate court formatting, run advanced summary audits, and manage recurring multi-tenant subscription billing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

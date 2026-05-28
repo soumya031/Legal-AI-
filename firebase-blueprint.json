@@ -1,0 +1,169 @@
+{
+  "entities": {
+    "Tenant": {
+      "title": "Tenant",
+      "description": "Represents a SaaS tenant / workspace for a law firm or individual legal practitioner.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "inviteCode": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "plan": { "type": "string", "enum": ["free", "pro", "enterprise"] },
+        "status": { "type": "string", "enum": ["active", "trialing", "canceled", "unpaid"] },
+        "billingCycle": { "type": "string", "enum": ["monthly", "yearly"] },
+        "currentPeriodEnd": { "type": "string", "format": "date-time" },
+        "seatsCount": { "type": "number" }
+      },
+      "required": ["id", "name", "inviteCode", "createdAt", "plan", "status"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Represents a user profile with associated tenant authorization role.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "role": { "type": "string", "enum": ["owner", "admin", "member"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "tenantId", "role", "createdAt"]
+    },
+    "Matter": {
+      "title": "Matter",
+      "description": "Represents a legal matter or case workspace in the platform.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "title": { "type": "string" },
+        "clientName": { "type": "string" },
+        "matterIdText": { "type": "string" },
+        "courtName": { "type": "string" },
+        "trialJudge": { "type": "string" },
+        "applicableLaw": { "type": "string" },
+        "opposingCounsel": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "pending", "disposed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "createdById": { "type": "string" }
+      },
+      "required": ["id", "tenantId", "title", "clientName", "courtName", "status", "createdAt", "updatedAt", "createdById"]
+    },
+    "Draft": {
+      "title": "Draft",
+      "description": "Represents an AI-generated legal draft associated with a matter.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "matterId": { "type": "string" },
+        "title": { "type": "string" },
+        "courtName": { "type": "string" },
+        "applicableLaw": { "type": "string" },
+        "natureOfProceeding": { "type": "string" },
+        "factualBackground": { "type": "string" },
+        "draftHtml": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdById": { "type": "string" }
+      },
+      "required": ["id", "matterId", "title", "draftHtml", "createdAt", "createdById"]
+    },
+    "Document": {
+      "title": "Document",
+      "description": "Represents uploaded evidentiary materials or pleadings with AI summaries.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "matterId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "summaryType": { "type": "string" },
+        "summaryHtml": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdById": { "type": "string" }
+      },
+      "required": ["id", "matterId", "title", "content", "createdAt", "createdById"]
+    },
+    "ChronologyEvent": {
+      "title": "ChronologyEvent",
+      "description": "Represents a key historical event or milestone in a legal matter.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "matterId": { "type": "string" },
+        "date": { "type": "string" },
+        "description": { "type": "string" },
+        "phase": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "matterId", "date", "description", "createdAt"]
+    },
+    "Hearing": {
+      "title": "Hearing",
+      "description": "Represents a court hearing scheduled for the matter.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "matterId": { "type": "string" },
+        "date": { "type": "string" },
+        "judge": { "type": "string" },
+        "status": { "type": "string", "enum": ["scheduled", "completed", "postponed", "cancelled"] },
+        "outcomes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "matterId", "date", "status", "createdAt"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "A collaborative note or memo created by legal team users in the matter.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "matterId": { "type": "string" },
+        "content": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "matterId", "content", "authorName", "authorId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/tenants/{tenantId}": {
+      "schema": "Tenant",
+      "description": "Tenant spaces hosting workspaces."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Multi-tenant user profiles mapped to tenants."
+    },
+    "/matters/{matterId}": {
+      "schema": "Matter",
+      "description": "Legal case workspaces within a specific tenant."
+    },
+    "/matters/{matterId}/drafts/{draftId}": {
+      "schema": "Draft",
+      "description": "AI drafting documents inside a matter."
+    },
+    "/matters/{matterId}/documents/{documentId}": {
+      "schema": "Document",
+      "description": "Materials and files with AI audits inside a matter."
+    },
+    "/matters/{matterId}/chronology/{eventId}": {
+      "schema": "ChronologyEvent",
+      "description": "Case chronology feed events."
+    },
+    "/matters/{matterId}/hearings/{hearingId}": {
+      "schema": "Hearing",
+      "description": "Hearing timetables."
+    },
+    "/matters/{matterId}/notes/{noteId}": {
+      "schema": "Note",
+      "description": "Matter-specific shared memos."
+    }
+  }
+}

@@ -1,0 +1,242 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE SECURITY PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Require email verification for write safety
+    function isVerifiedUser() {
+      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.uid != null);
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Fetch caller's user record (cached across lookups inside rules execution)
+    function callerProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Multi-tenant authorization helper
+    function isMemberOfTenant(tenantId) {
+      return isVerifiedUser() && callerProfile().tenantId == tenantId;
+    }
+
+    function isTenantAdmin(tenantId) {
+      return isMemberOfTenant(tenantId) && (callerProfile().role == 'owner' || callerProfile().role == 'admin');
+    }
+
+    // --- ENTITY SCHEMA VALIDATORS ---
+    
+    function isValidTenant(data) {
+      return data.keys().hasAll(['id', 'name', 'inviteCode', 'createdAt', 'plan', 'status'])
+        && data.keys().size() >= 6
+        && data.id is string && data.id.size() <= 64
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.inviteCode is string && data.inviteCode.size() <= 32
+        && data.plan in ['free', 'pro', 'enterprise']
+        && data.status in ['active', 'trialing', 'canceled', 'unpaid'];
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'tenantId', 'role', 'createdAt'])
+        && data.keys().size() >= 6
+        && data.uid == request.auth.uid
+        && data.email is string && data.email.size() <= 128
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.tenantId is string && data.tenantId.size() <= 64
+        && data.role in ['owner', 'admin', 'member'];
+    }
+
+    function isValidMatter(data) {
+      return data.keys().hasAll(['id', 'tenantId', 'title', 'clientName', 'courtName', 'status', 'createdAt', 'updatedAt', 'createdById'])
+        && data.id is string && data.id.size() <= 64
+        && data.tenantId is string && data.tenantId.size() <= 64
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.clientName is string && data.clientName.size() <= 100
+        && data.courtName is string && data.courtName.size() <= 100
+        && data.status in ['active', 'pending', 'disposed']
+        && data.createdById == request.auth.uid;
+    }
+
+    function isValidDraft(data) {
+      return data.keys().hasAll(['id', 'matterId', 'title', 'draftHtml', 'createdAt', 'createdById'])
+        && data.id is string && data.id.size() <= 64
+        && data.matterId is string && data.matterId.size() <= 64
+        && data.title is string && data.title.size() <= 200
+        && data.draftHtml is string && data.draftHtml.size() <= 1048576
+        && data.createdById == request.auth.uid;
+    }
+
+    function isValidDocument(data) {
+      return data.keys().hasAll(['id', 'matterId', 'title', 'content', 'createdAt', 'createdById'])
+        && data.id is string && data.id.size() <= 64
+        && data.matterId is string && data.matterId.size() <= 64
+        && data.title is string && data.title.size() <= 200
+        && data.content is string && data.content.size() <= 524288
+        && data.createdById == request.auth.uid;
+    }
+
+    function isValidChronologyEvent(data) {
+      return data.keys().hasAll(['id', 'matterId', 'date', 'description', 'createdAt'])
+        && data.id is string && data.id.size() <= 64
+        && data.matterId is string && data.matterId.size() <= 64
+        && data.date is string && data.date.size() <= 32
+        && data.description is string && data.description.size() <= 1000;
+    }
+
+    function isValidHearing(data) {
+      return data.keys().hasAll(['id', 'matterId', 'date', 'status', 'createdAt'])
+        && data.id is string && data.id.size() <= 64
+        && data.matterId is string && data.matterId.size() <= 64
+        && data.date is string && data.date.size() <= 32
+        && data.status in ['scheduled', 'completed', 'postponed', 'cancelled'];
+    }
+
+    function isValidNote(data) {
+      return data.keys().hasAll(['id', 'matterId', 'content', 'authorName', 'authorId', 'createdAt'])
+        && data.id is string && data.id.size() <= 64
+        && data.matterId is string && data.matterId.size() <= 64
+        && data.content is string && data.content.size() <= 5000
+        && data.authorId == request.auth.uid;
+    }
+
+    // --- CORES MATCH BLOCKS ---
+
+    // 1. Tenants Rules
+    match /tenants/{tenantId} {
+      allow get: if isMemberOfTenant(tenantId);
+      allow list: if isSignedIn();
+      
+      // Creating tenants is allowed during signup/registration for verified users
+      allow create: if isVerifiedUser() && isValidId(tenantId) && isValidTenant(incoming());
+      
+      // Only admins/owners can update the workspace name and details
+      allow update: if isTenantAdmin(tenantId) && isValidTenant(incoming()) && (
+        // Protect plan changes from normal updates – must preserve the plan/status keys
+        (incoming().plan == existing().plan && incoming().status == existing().status) ||
+        // Admin or billing simulation can transition fields
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'plan', 'status', 'billingCycle', 'currentPeriodEnd', 'seatsCount'])
+      );
+    }
+
+    // 2. User Profiles Rules
+    match /users/{userId} {
+      // Users can get themselves (crucial for onboarding checking, doesn't recursive-evaluate callerProfile)
+      allow get: if isSignedIn() && request.auth.uid == userId;
+      // Users can get anyone else inside their tenant
+      allow get: if isVerifiedUser() && request.auth.uid != userId && resource.data.tenantId == callerProfile().tenantId;
+      allow list: if isVerifiedUser() && resource.data.tenantId == callerProfile().tenantId;
+      
+      // Profiles can be self-created at signup
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming());
+      allow update: if isVerifiedUser() && request.auth.uid == userId && isValidUser(incoming()) && (
+        // Forbid standard users from upgrading their roles or escaping their tenants
+        incoming().role == existing().role && incoming().tenantId == existing().tenantId
+      );
+    }
+
+    // 3. Matters Rules
+    match /matters/{matterId} {
+      // Secure list and individual reads – no blanket query allowed
+      allow get: if isVerifiedUser() && isValidId(matterId) && isMemberOfTenant(resource.data.tenantId);
+      allow list: if isVerifiedUser() && resource.data.tenantId == callerProfile().tenantId;
+
+      allow create: if isVerifiedUser() && isValidId(matterId) && isMemberOfTenant(incoming().tenantId) && isValidMatter(incoming()) && (
+        incoming().createdAt is string && incoming().createdAt.size() <= 64 && incoming().updatedAt is string && incoming().updatedAt.size() <= 64
+      );
+
+      allow update: if isVerifiedUser() && isValidId(matterId) && isMemberOfTenant(existing().tenantId) && isValidMatter(incoming()) && (
+        incoming().tenantId == existing().tenantId &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().createdById == existing().createdById &&
+        incoming().updatedAt is string && incoming().updatedAt.size() <= 64 &&
+        // Terminal Status Gate: cannot modify disposed matters
+        existing().status != 'disposed' && (
+          // Standard Update: Edit general parameters
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'clientName', 'matterIdText', 'courtName', 'trialJudge', 'applicableLaw', 'opposingCounsel', 'description', 'status', 'updatedAt'])
+        )
+      );
+
+      allow delete: if isVerifiedUser() && isValidId(matterId) && isTenantAdmin(existing().tenantId) && existing().status != 'disposed';
+
+      // --- SUB-COLLECTIONS ---
+
+      // Drafts sub-resource
+      match /drafts/{draftId} {
+        allow read: if isVerifiedUser() && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId);
+        allow create: if isVerifiedUser() && isValidId(draftId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && isValidDraft(incoming()) && incoming().createdAt is string && incoming().createdAt.size() <= 64;
+        allow update: if isVerifiedUser() && isValidId(draftId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && isValidDraft(incoming()) &&
+          incoming().id == existing().id &&
+          incoming().matterId == existing().matterId &&
+          incoming().createdById == existing().createdById &&
+          incoming().createdAt == existing().createdAt;
+        allow delete: if isVerifiedUser() && isValidId(draftId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId);
+      }
+
+      // Evidentiary Documents sub-resource
+      match /documents/{documentId} {
+        allow read: if isVerifiedUser() && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId);
+        allow create: if isVerifiedUser() && isValidId(documentId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && isValidDocument(incoming()) && incoming().createdAt is string && incoming().createdAt.size() <= 64;
+        allow update: if isVerifiedUser() && isValidId(documentId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && isValidDocument(incoming()) &&
+          incoming().id == existing().id &&
+          incoming().matterId == existing().matterId &&
+          incoming().createdById == existing().createdById &&
+          incoming().createdAt == existing().createdAt;
+        allow delete: if isVerifiedUser() && isValidId(documentId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId);
+      }
+
+      // Chronology Feed events
+      match /chronology/{eventId} {
+        allow read: if isVerifiedUser() && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId);
+        allow create: if isVerifiedUser() && isValidId(eventId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && isValidChronologyEvent(incoming()) && incoming().createdAt is string && incoming().createdAt.size() <= 64;
+        allow update: if isVerifiedUser() && isValidId(eventId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && isValidChronologyEvent(incoming()) &&
+          incoming().id == existing().id &&
+          incoming().matterId == existing().matterId &&
+          incoming().createdAt == existing().createdAt;
+        allow delete: if isVerifiedUser() && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId);
+      }
+
+      // Hearings timetable
+      match /hearings/{hearingId} {
+        allow read: if isVerifiedUser() && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId);
+        allow create: if isVerifiedUser() && isValidId(hearingId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && isValidHearing(incoming()) && incoming().createdAt is string && incoming().createdAt.size() <= 64;
+        allow update: if isVerifiedUser() && isValidId(hearingId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && isValidHearing(incoming()) &&
+          incoming().id == existing().id &&
+          incoming().matterId == existing().matterId &&
+          incoming().createdAt == existing().createdAt;
+        allow delete: if isVerifiedUser() && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId);
+      }
+
+      // Matter collaboration Notes
+      match /notes/{noteId} {
+        allow read: if isVerifiedUser() && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId);
+        allow create: if isVerifiedUser() && isValidId(noteId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && isValidNote(incoming()) && incoming().createdAt is string && incoming().createdAt.size() <= 64;
+        allow update: if isVerifiedUser() && isValidId(noteId) && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && isValidNote(incoming()) &&
+          incoming().id == existing().id &&
+          incoming().matterId == existing().matterId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().authorId == existing().authorId;
+        allow delete: if isVerifiedUser() && isMemberOfTenant(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId) && (existing().authorId == request.auth.uid || isTenantAdmin(get(/databases/$(database)/documents/matters/$(matterId)).data.tenantId));
+      }
+    }
+  }
+}
